@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-##@Version           :  202408171720-git
+##@Version           :  202408171801-git
 # @@Author           :  Jason Hempstead
 # @@Contact          :  jason@casjaysdev.pro
 # @@License          :  LICENSE.md
 # @@ReadME           :  install.sh --help
 # @@Copyright        :  Copyright: (c) 2024 Jason Hempstead, Casjays Developments
-# @@Created          :  Saturday, Aug 17, 2024 17:20 EDT
+# @@Created          :  Saturday, Aug 17, 2024 18:01 EDT
 # @@File             :  install.sh
 # @@Description      :  Container installer script for jenkins
 # @@Changelog        :  New script
@@ -27,7 +27,7 @@
 # shellcheck disable=SC2317
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 APPNAME="jenkins"
-VERSION="202408171720-git"
+VERSION="202408171801-git"
 REPO_BRANCH="${GIT_REPO_BRANCH:-main}"
 HOME="${USER_HOME:-$HOME}"
 USER="${SUDO_USER:-$USER}"
@@ -329,8 +329,8 @@ HOST_PROC_MOUNT_ENABLED="no"
 HOST_MODULES_MOUNT_ENABLED="no"
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Set container hostname and domain - Default: [jenkins.$SET_HOST_FULL_NAME] [$SET_HOST_FULL_DOMAIN]
-CONTAINER_HOSTNAME="jenkins"
-CONTAINER_DOMAINNAME="casjaysdev.pro"
+CONTAINER_HOSTNAME=""
+CONTAINER_DOMAINNAME=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Set the network type - default is bridge - [bridge/host]
 HOST_DOCKER_NETWORK="bridge"
@@ -359,7 +359,7 @@ HOST_NGINX_INTERNAL_HOST=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Enable this if container is running a webserver - [yes/no] [internalPort] [yes/no] [yes/no] [listen]
 CONTAINER_WEB_SERVER_ENABLED="yes"
-CONTAINER_WEB_SERVER_INT_PORT="80"
+CONTAINER_WEB_SERVER_INT_PORT="8080"
 CONTAINER_WEB_SERVER_SSL_ENABLED="no"
 CONTAINER_WEB_SERVER_AUTH_ENABLED="no"
 CONTAINER_WEB_SERVER_LISTEN_ON="127.0.0.10"
@@ -398,7 +398,7 @@ CONTAINER_DATABASE_CREATE=""
 # Database settings - [listen] [yes/no]
 CONTAINER_DATABASE_LISTEN=""
 CONTAINER_REDIS_ENABLED="no"
-CONTAINER_SQLITE_ENABLED="yes"
+CONTAINER_SQLITE_ENABLED="no"
 CONTAINER_MARIADB_ENABLED="no"
 CONTAINER_MONGODB_ENABLED="no"
 CONTAINER_COUCHDB_ENABLED="no"
@@ -454,7 +454,7 @@ CONTAINER_DEVICES=""
 CONTAINER_DEVICES+=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Define additional variables - [myvar=var,myothervar=othervar]
-CONTAINER_ENV="JENKINS_HOME=/data/jenkins,COPY_REFERENCE_FILE_LOG=/dat/logs/jenkins/copy_reference_file.log"
+CONTAINER_ENV="JENKINS_HOME=/data/$APPNAME,COPY_REFERENCE_FILE_LOG=/data/logs/$APPNAME/copy_reference_file.log"
 CONTAINER_ENV+=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Set sysctl - []
@@ -494,7 +494,7 @@ CONTAINER_DEBUG_ENABLED="no"
 CONTAINER_DEBUG_OPTIONS=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # additional directories to create - [/config/dir1,/data/dir2]
-CONTAINER_CREATE_DIRECTORY="/data/$APPNAME,/config/$APPNAME"
+CONTAINER_CREATE_DIRECTORY="/data/$APPNAME,/config/$APPNAME,/data/logs/$APPNAME"
 CONTAINER_CREATE_DIRECTORY+=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # enable cron jobs
@@ -2497,34 +2497,38 @@ if [ "$CONTAINER_INSTALLED" = "true" ] || __docker_ps_all -q; then
     __printf_spacing_color "3" "40" "This container does not have services configured"
     printf '# - - - - - - - - - - - - - - - - - - - - - - - - - -\n'
   else
-    for service in $SET_PORT; do
-      if [ "$service" != "--publish" ] && [ "$service" != " " ] && [ -n "$service" ]; then
+    for create_service in $SET_PORT; do
+      if [ "$create_service" != "--publish" ] && [ "$create_service" != " " ]; then
         unset type
         if [ "$set_listen_on_all" = "yes" ]; then
           for custom_port in $set_listen_port; do
-            set_host="[::/0]"
-            set_port="$(echo "$custom_port" | awk -F ':' '{print $2}')"
-            set_service="$(echo "$custom_port" | awk -F ':' '{print $1}')"
-            service="${service//$custom_port/}"
+            set_custom_port="$(echo "$custom_port" | awk -F ':' '{print $2}')"
+            set_custom_service="$(echo "$custom_port" | awk -F ':' '{print $1}')"
+            __printf_spacing_color "6" "40" "Port $set_custom_service is mapped to:" "$set_custom_port"
           done
+          create_service="${create_service//$custom_port/}"
+          unset set_custom_service set_custom_port
         fi
-        if echo "$service" | grep -q ":.*.:"; then
-          set_host="$(echo "$service" | awk -F ':' '{print $1}')"
-          set_port="$(echo "$service" | awk -F ':' '{print $3}')"
-          set_service="$(echo "$service" | awk -F ':' '{print $2}')"
-        elif [ -n "$service" ] && [ "$service" != " " ]; then
-          set_host="$SET_LISTEN"
-          set_port="$(echo "$service" | awk -F ':' '{print $1}')"
-          set_service="$(echo "$service" | awk -F ':' '{print $2}')"
-        fi
-        get_servive="$set_service"
-        set_service="${set_service//\/*/}"
-        listen="${set_host//0.0.0.0/$HOST_LISTEN_ADDR}:$set_port"
-        echo "$get_servive" | grep -qE '[0-9]/tcp|[0-9]/udp' && type="${get_servive//*\//}" || unset type
-        [ -n "$type" ] && get_listen="$listen/$type" || get_listen="$listen"
-        set_listen=$(printf '%s' "$get_listen")
-        if [ -n "$listen" ]; then
-          __printf_spacing_color "6" "40" "Port $set_service is mapped to:" "$set_listen"
+        service="$create_service"
+        if [ -n "$service" ]; then
+          if echo "$service" | grep -q ":.*.:"; then
+            set_host="$(echo "$service" | awk -F ':' '{print $1}')"
+            set_port="$(echo "$service" | awk -F ':' '{print $3}')"
+            set_service="$(echo "$service" | awk -F ':' '{print $2}')"
+          elif [ -n "$service" ] && [ "$service" != " " ]; then
+            set_host="$SET_LISTEN"
+            set_port="$(echo "$service" | awk -F ':' '{print $1}')"
+            set_service="$(echo "$service" | awk -F ':' '{print $2}')"
+          fi
+          get_servive="$set_service"
+          set_service="${set_service//\/*/}"
+          listen="${set_host//0.0.0.0/$HOST_LISTEN_ADDR}:$set_port"
+          echo "$get_servive" | grep -qE '[0-9]/tcp|[0-9]/udp' && type="${get_servive//*\//}" || unset type
+          [ -n "$type" ] && get_listen="$listen/$type" || get_listen="$listen"
+          set_listen=$(printf '%s' "$get_listen")
+          if [ -n "$listen" ]; then
+            __printf_spacing_color "6" "40" "Port $set_service is mapped to:" "$set_listen"
+          fi
         fi
       fi
       unset get_listen type
